@@ -1,10 +1,117 @@
-# SIM model code will go here
+# TO RUN CODE python src/sim_model.py 
 import pandas as pd
+import numpy as np
 
 file_path = "data/Sim Model Portfolio For Code.ods"
+sheet_name = "Prices"
 
-prices = pd.read_excel(file_path, sheet_name="Prices", engine="odf")
+# User-selected model settings
+date_col = "Date"
+benchmark_col = "SPX"
 
-print(prices.head())
-print(prices.columns)
-print(prices.shape)
+# Load prices
+prices = pd.read_excel(file_path, sheet_name=sheet_name, engine="odf")
+
+# Set Date as index
+prices[date_col] = pd.to_datetime(prices[date_col])
+prices.set_index(date_col, inplace=True)
+
+# Choose Risk-Free column name
+if "Adjusted Risk Free" in prices.columns:
+    rf_col = "Adjusted Risk Free"
+elif "Risk Free" in prices.columns:
+    rf_col = "Risk Free"
+else:
+    raise ValueError("No risk-free column found. Use 'Adjusted Risk Free' or 'Risk Free'.")
+
+# Separate risk-free rate
+rf = prices[rf_col]
+
+# Identify stock columns automatically
+stock_cols = [
+    col for col in prices.columns
+    if col not in [benchmark_col, rf_col]
+]
+
+# Separate price data
+stock_prices = prices[stock_cols]
+benchmark_prices = prices[benchmark_col]
+
+# Calculate log returns
+stock_returns = np.log(stock_prices / stock_prices.shift(1))
+benchmark_returns = np.log(benchmark_prices / benchmark_prices.shift(1))
+
+# Combine stock and benchmark returns
+returns = pd.concat([stock_returns, benchmark_returns.rename(benchmark_col)], axis=1)
+
+# Remove first NaN row
+returns = returns.dropna()
+
+# Align risk-free rate with return dates
+rf = rf.loc[returns.index]
+
+# Calculate risk premia
+risk_premia = returns.subtract(rf, axis=0)
+
+# Display work
+print("\nStock Columns:")
+print(stock_cols)
+
+print("\nStock Returns:")
+print(stock_returns.dropna().head())
+
+print("\nBenchmark Returns:")
+print(benchmark_returns.dropna().head())
+
+print("\nRisk-Free Rate:")
+print(rf.head())
+
+print("\nRisk Premia:")
+print(risk_premia.head())
+
+Mean = risk_premia.mean()
+std = risk_premia.std()
+#CALCULATE RISK PREMIA STATISTICS
+risk_premia_stats = pd.DataFrame({
+    "Ticker" : risk_premia.columns,
+    "Average Risk Premia": risk_premia.mean().values,
+    "Standard Deviation": risk_premia.std().values,
+    "Variance": risk_premia.var().values,
+    "Sharpe Ratio": (Mean/std).values
+})
+print ("\nRisk Premia Statistics:")
+print(risk_premia_stats)
+
+import statsmodels.api as sm 
+
+sim_results = []
+#This is the loop basically says for all the stock in stock columns
+for stock in stock_cols:
+    #Defines Y as your dependent variable
+    Y = risk_premia[stock]
+    #Defines X as your Independent Variable
+    X = risk_premia[benchmark_col]
+    #This adds the Alpha TERM
+    X = sm.add_constant(X)
+    #This runs the linear Regression
+    model = sm.OLS(Y,X).fit()
+    # This defines alpha as the intercept
+    alpha= model.params["const"]
+    #This defines beta as the slope 
+    beta = model.params[benchmark_col]
+    #This calculates the variance of the regression
+    residual_variance = model.resid.var()
+    #Saves the Results
+    sim_results.append({
+        "Ticker": stock,
+        "Alpha": alpha,
+        "Beta": beta,
+        "Residual Variance": residual_variance
+    })
+#Turns Results into a table
+sim_table = pd.DataFrame(sim_results)
+
+print("\nSIM Regression Results:")
+print(sim_table)
+
+
