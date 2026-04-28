@@ -3,7 +3,8 @@ import pandas as pd
 
 file_path = "data/Sim Model Portfolio For Code.ods"
 
-excel_file = pd.ExcelFile(file_path, engine="odf")
+prices = pd.read_excel(file_path, sheet_name="Prices", engine="odf")
 
-print("Sheets in this file:")
-print(excel_file.sheet_names)
+print(prices.head())
+print(prices.columns)
+print(prices.shape)
