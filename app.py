@@ -191,3 +191,4 @@ if uploaded_file is not None:
 
     except Exception as e:
         st.error(f"Error running SIM model: {e}")
+    # To run APP on vscode: python -m streamlit run app.py
