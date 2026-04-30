@@ -115,3 +115,74 @@ print("\nSIM Regression Results:")
 print(sim_table)
 
 
+#Add Ranking Metric
+sim_table ["Alpha/Residual Variance"] = ( 
+    sim_table ["Alpha"] / sim_table ["Residual Variance"] 
+)
+sim_table = sim_table.sort_values (
+    by = "Alpha/Residual Variance",
+    ascending=False
+)
+sim_table = sim_table.reset_index(drop=True)
+
+print("\nRanked SIM TABLE:")
+print (sim_table)
+
+#Market Variance Calculation TAKES VARIANCE OF SPX
+market_variance = risk_premia[benchmark_col].var()
+
+print("\nMarket Variance:")
+print(market_variance)
+
+#Create New Column in SIM Table for the numerator of the cutoff rate
+sim_table["Cutoff Numerator Component"]= (
+#This calculates (beta*alpha)/Residual Variance= The contribution of a stocks alpha adjusted for market exposure and firm specific risk
+    sim_table["Beta"] * sim_table["Alpha"] / sim_table["Residual Variance"]
+)
+#Denominator Component of Cutoff Rate: Stocks Market Risk Contribution adjusted for residual risk
+sim_table ["Cutoff Denominator Component"] = (
+    sim_table["Beta"] ** 2 / sim_table["Residual Variance"]
+)
+ #Running total from top to bottom for numerator
+sim_table["Cumulative Numerator"] = (
+    sim_table["Cutoff Numerator Component"].cumsum()
+)
+#Running total from top to bottom for denominator
+sim_table ["Cumulative Denominator"] = (
+    sim_table["Cutoff Denominator Component"].cumsum()
+)
+sim_table["Cutoff Rate"] = (
+    (market_variance * sim_table["Cumulative Numerator"])
+    /
+    (1 + market_variance * sim_table["Cumulative Denominator"])
+)
+
+print("\nCutoff Rate")
+print( sim_table [["Ticker","Alpha/Residual Variance","Cutoff Rate"]])
+
+sim_table["Incude"]= (
+    sim_table ["Alpha/Residual Variance"]> sim_table["Cutoff Rate"]
+)
+
+#Select and Filter only included stocks that lie above the cutoff rate
+included_stocks = sim_table[sim_table["Include"]==True]
+c_star = included_stocks["Cutoff Rate"].iloc[-1]
+
+#WEIGHTS Calculation in order to do this we take alpha - (Cutoff Rate *beta) 
+#Which gives us how much extra alpha or additional return to the benchmark a stock gives above the cutoff rate
+#Then we divide that by residual Variance 
+#This gives excess alpha above the cutoff-adjusted required return per unit of unsystematic risk
+sim_table["Z"] = (
+   ( sim_table["Alpha"] - (sim_table["Beta"] * c_star))
+    /
+    sim_table["Residual Variance"]
+)
+#That gives us raw weights now we need to normalize the weights to equal 1
+included_stocks = sim_table[sim_table["Include"]==True]
+included_stocks["Weights"] = (
+    included_stocks["Z"]/included_stocks["Z"].sum()
+)
+
+print("\nFinal Portfolio Weights:")
+print(included_stocks[["Ticker", "Z", "Weights"]])
+
