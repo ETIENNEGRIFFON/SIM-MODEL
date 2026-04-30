@@ -143,7 +143,9 @@ def run_sim_model(prices, benchmark_col="Benchmark"):
     )
 
     # Normalize weights only for included stocks
-    included_stocks = sim_table[sim_table["Include"] == True].copy()
+    included_stocks = sim_table[
+        (sim_table["Include"] == True) & (sim_table ["Z"]>0)
+    ].copy()
 
     included_stocks["Weight"] = (
         included_stocks["Z"] / included_stocks["Z"].sum()
