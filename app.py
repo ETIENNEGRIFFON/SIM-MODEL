@@ -2,9 +2,48 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import statsmodels.api as sm
+st.set_page_config(
+    page_title="SIM Portfolio Model",
+    layout="wide"
+)
+
+st.markdown(
+    """
+    <style>
+    .stApp {
+        background-color: #F7F5EF;
+        color: #002F30;
+    }
+
+    h1, h2, h3 {
+        color: #002F30;
+    }
+
+    .piraeus-header {
+        background-color: #FFD900;
+        color: #002F30;
+        padding: 22px;
+        border-radius: 14px;
+        font-size: 38px;
+        font-weight: 800;
+        margin-bottom: 20px;
+    }
+
+    .piraeus-subbox {
+        background-color: #002F30;
+        color: #FFD900;
+        padding: 14px;
+        border-radius: 10px;
+        font-weight: 600;
+        margin-bottom: 20px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
 
-def run_sim_model(prices, benchmark_col="Benchmark"):
+def run_sim_model(prices, benchmark_col="Benchmark", allow_shorting=False):
     prices = prices.copy()
 
     # Set Date as index
@@ -123,16 +162,20 @@ def run_sim_model(prices, benchmark_col="Benchmark"):
     )
 
     # Select included stocks
-    sim_table["Include"] = (
+    sim_table["Pass Cutoff Test"] = (
         sim_table["Alpha/Residual Variance"] > sim_table["Cutoff Rate"]
     )
+    #Find the final included row
+    valid_rows =  sim_table[sim_table["Pass Cutoff Test"] == True]
 
-    included_stocks = sim_table[sim_table["Include"] == True].copy()
+    if valid_rows.empty:
+        raise ValueError ("No Stocks Passed the Cutoff Rate")
+    last_included_index = valid_rows.index[-1]
 
-    if included_stocks.empty:
-        raise ValueError("No stocks passed the cutoff rule.")
-
-    # Final cutoff rate
+    #Include everything up to that row
+    sim_table["Include"] = sim_table.index <= last_included_index
+    included_stocks = sim_table[sim_table["Include"]==True].copy()
+    #Final Cutoff Rate
     c_star = included_stocks["Cutoff Rate"].iloc[-1]
 
     # Raw weight score
@@ -143,9 +186,15 @@ def run_sim_model(prices, benchmark_col="Benchmark"):
     )
 
     # Normalize weights only for included stocks
-    included_stocks = sim_table[
-        (sim_table["Include"] == True) & (sim_table ["Z"]>0)
-    ].copy()
+    if allow_shorting:
+        included_stocks = sim_table[sim_table["Include"]==True].copy()
+    else:
+        included_stocks = sim_table[
+            (sim_table["Include"] == True) & (sim_table["Z"] > 0)
+        ].copy()
+
+    if included_stocks.empty:
+        raise ValueError("No stocks were available for weighting.")
 
     included_stocks["Weight"] = (
         included_stocks["Z"] / included_stocks["Z"].sum()
@@ -155,8 +204,15 @@ def run_sim_model(prices, benchmark_col="Benchmark"):
 
 
 # Streamlit App
-st.title("SIM Portfolio Model")
+st.markdown(
+    '<div class="piraeus-header">SIM Portfolio Model</div>',
+    unsafe_allow_html=True
+)
 
+st.markdown(
+    '<div class="piraeus-subbox">Piraeus-style Single Index Model portfolio tool</div>',
+    unsafe_allow_html=True
+)
 st.write("Upload your Excel file to run the Single Index Model.")
 
 uploaded_file = st.file_uploader("Upload your Excel file", type=["xlsx", "ods"])
@@ -172,9 +228,10 @@ if uploaded_file is not None:
 
     st.subheader("Uploaded Data")
     st.dataframe(prices)
-
+    
+    allow_shorting = st.checkbox("Allow shorting / Negative Weights")
     try:
-        risk_premia_stats, sim_table, included_stocks, c_star = run_sim_model(prices)
+        risk_premia_stats, sim_table, included_stocks, c_star = run_sim_model(prices, allow_shorting=allow_shorting)
 
         st.subheader("Risk Premia Statistics")
         st.dataframe(risk_premia_stats)
@@ -193,4 +250,3 @@ if uploaded_file is not None:
 
     except Exception as e:
         st.error(f"Error running SIM model: {e}")
-    # To run APP on vscode: python -m streamlit run app.py
